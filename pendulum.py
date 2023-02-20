@@ -1,5 +1,6 @@
 import pybullet as p
 import time
+import pybullet_data
 
 GUI = True
 
@@ -12,6 +13,8 @@ else:
 
 p.setGravity(0, 0, -10)
 bodyId = p.loadURDF("./pendulum.urdf")
+p.setAdditionalSearchPath(pybullet_data.getDataPath())
+planeID = p.loadURDF('plane.urdf')
 t = 0
 logTime = [t]
 logPos = [q0]
