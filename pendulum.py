@@ -4,6 +4,7 @@ import pybullet_data
 import numpy as np
 from scipy.integrate import odeint
 import math
+import copy
 
 GUI = False
 
@@ -25,12 +26,14 @@ else:
     physicsClient = p.connect(p.DIRECT)
 
 g = 10
+m = 1
 L = 0.5
+kf = 0.1
 p.setGravity(0, 0, -g)
 bodyId = p.loadURDF("./pendulum.urdf")
 
 
-q0 = 0.5 # starting position
+q0 = 0.1 # starting position
 dt = 1/240 # pybullet simulation step
 t = 0
 maxTime = 20
@@ -47,7 +50,9 @@ p.setJointMotorControl2(bodyIndex = bodyId,
 for _ in range(1000):
     p.stepSimulation()
 
-# make constant oscillations
+q0 = p.getJointState(bodyId, 1)[0]
+
+# get rid of the default damping
 p.changeDynamics(bodyId, 1, linearDamping = 0)
 
 # let pendulum joint rotate freely
@@ -68,10 +73,10 @@ for t in logTime[1:]:
 p.disconnect()
 
 def rp(x, t):
-    return [x[1], -g/L*math.sin(x[0])]
+    return [x[1], -(g/L)*math.sin(x[0]) -kf/(m*L*L)*x[1] ]
 
 theta = odeint(rp, [q0, 0], logTime)
-logTheta = theta[:,0]
+logOdeint = theta[:,0]
 
 def cost(q_exp, q_theor):
     l2 = 0
@@ -85,13 +90,33 @@ def cost(q_exp, q_theor):
     l2 = math.sqrt(l2)
     return (l2, linf)
 
-(l2, linf) = cost(logPos, logTheta)
-print(f'l2 odeint = {l2}')
-print(f'linf odeint = {linf}')
+def symp_euler(fun, x0, TT):
+    x1 = copy.copy(x0)
+    xx = np.array(x1)
+    for i in range(len(TT)-1):
+        dt = (TT[i+1] - TT[i])
+        x1[1] += fun(x1, 0)[1]*dt
+        x1[0] += x1[1]*dt
+        xx = np.vstack((xx,x1))
+    return xx
+
+(l2_ode, linf_ode) = cost(logPos, logOdeint)
+
+logEuler = symp_euler(rp, [q0, 0], logTime)
+logEuler = logEuler[:,0]
+
+(l2_euler, linf_euler) = cost(logPos, logEuler)
+
+print()
+print(f'L2 odeint = {l2_ode}')
+print(f'L2 euler = {l2_euler}')
+print(f'Linf odeint = {linf_ode}')
+print(f'Linf euler = {linf_euler}')
 
 import matplotlib.pyplot as plt
 plt.plot(logTime, logPos, label = "sim")
 plt.grid(True)
-plt.plot(logTime, logTheta, label = "theor")
+plt.plot(logTime, logOdeint, label = "odeint")
+plt.plot(logTime, logEuler, label = "euler")
 plt.legend()
 plt.show()
