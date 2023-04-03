@@ -36,7 +36,7 @@ bodyId = p.loadURDF("./pendulum.urdf")
 q0 = 0.1 # starting position
 dt = 1/240 # pybullet simulation step
 t = 0
-maxTime = 20
+maxTime = 5
 logTime = np.arange(0.0, maxTime, dt)
 sz = logTime.size
 logPos = np.zeros(sz)
@@ -62,9 +62,18 @@ p.setJointMotorControl2(bodyIndex = bodyId,
                         targetVelocity = 0,
                         force = 0)
 idx = 1
+pos = q0
+vel = 0
+kp = 2
+kv = 1
 for t in logTime[1:]:
+    p.setJointMotorControl2(bodyIndex = bodyId,
+                        jointIndex = 1,
+                        controlMode = p.TORQUE_CONTROL,
+                        force = -kp*pos - kv*vel)
     p.stepSimulation()
     pos = p.getJointState(bodyId, 1)[0]
+    vel = p.getJointState(bodyId, 1)[1]
     logPos[idx] = pos
     idx += 1
     if (GUI):
@@ -73,7 +82,10 @@ for t in logTime[1:]:
 p.disconnect()
 
 def rp(x, t):
-    return [x[1], -(g/L)*math.sin(x[0]) -kf/(m*L*L)*x[1] ]
+    return [x[1], -(g/L)*math.sin(x[0]) -kf/(m*L*L)*x[1] + 0.2/(m*L*L) ]
+
+def rp_lin(x, t):
+    return [x[1], -(g/L)*x[0] -kf/(m*L*L)*x[1] ]
 
 theta = odeint(rp, [q0, 0], logTime)
 logOdeint = theta[:,0]
@@ -107,16 +119,24 @@ logEuler = logEuler[:,0]
 
 (l2_euler, linf_euler) = cost(logPos, logEuler)
 
+logLin = symp_euler(rp_lin, [q0, 0], logTime)
+logLin = logLin[:,0]
+
+(l2_lin, linf_lin) = cost(logPos, logLin)
+
 print()
 print(f'L2 odeint = {l2_ode}')
 print(f'L2 euler = {l2_euler}')
+# print(f'L2 lin = {l2_lin}')
 print(f'Linf odeint = {linf_ode}')
 print(f'Linf euler = {linf_euler}')
+# print(f'Linf lin = {linf_lin}')
 
 import matplotlib.pyplot as plt
 plt.plot(logTime, logPos, label = "sim")
 plt.grid(True)
-plt.plot(logTime, logOdeint, label = "odeint")
-plt.plot(logTime, logEuler, label = "euler")
+# plt.plot(logTime, logOdeint, label = "odeint")
+# plt.plot(logTime, logEuler, label = "euler")
+# plt.plot(logTime, logLin, label = "lin")
 plt.legend()
 plt.show()
