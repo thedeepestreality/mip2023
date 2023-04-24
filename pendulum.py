@@ -36,15 +36,19 @@ bodyId = p.loadURDF("./pendulum.urdf")
 q0 = 0.1 # starting position
 dt = 1/240 # pybullet simulation step
 t = 0
-maxTime = 5
+maxTime = 6
+T = 5
 logTime = np.arange(0.0, maxTime, dt)
 sz = logTime.size
 logPos = np.zeros(sz)
 logVel = np.zeros(sz)
+logAcc = np.zeros(sz)
 logCtr = np.zeros(sz-1)
 logPos[0] = q0
 logRef = np.zeros(sz)
 logRef[0] = q0
+logRefd = np.zeros(sz)
+logRefdd = np.zeros(sz)
 
 # go to the starting position
 p.setJointMotorControl2(bodyIndex = bodyId,
@@ -76,32 +80,48 @@ kp = 5005
 kv = 100
 ki = 0
 sum = 0
-qd = q0
+qd = 0.2
 
-def feedback_lin(pos, vel, posd):
+def cubic_interpol(q0, qd, T, t):
+    a0 = 0
+    a1 = 0
+    a2 = 3/T**2
+    a3 = -2/T**3
+    s = a3*t**3 + a2*t**2 + a1*t + a0
+    ds = 3*a3*t**2 + 2*a2*t + a1
+    dds = 6*a3*t + 2*a2
+    q = q0 + (qd - q0)*s
+    dq = (qd - q0)*ds
+    ddq = (qd - q0)*dds
+    return (q, dq, ddq) if (t <= T) else (qd, 0, 0)
+
+def feedback_lin(pos, vel, posd, veld, accd):
     u = -kp*(pos - posd) -kv*vel
     ctrl = m*L*L*((g/L)*math.sin(pos)+kf/(m*L*L)*vel + u)
     return ctrl
-
+prev_vel = 0
 for t in logTime[1:]:
     # pos -= math.pi
     e = pos-qd
     sum += e*dt
     #ctrl = -kp*e - kv*vel - ki*sum
-    ctrl = feedback_lin(pos, vel, qd)
-    qd += 2*math.pi/5/240
-    logRef[idx] = qd
+    (posd, veld, accd)  = cubic_interpol(q0, qd, T, t)
+    ctrl = feedback_lin(pos, vel, posd, veld, accd)
+    logRef[idx] = posd
+    logRefd[idx] = veld
+    logRefdd[idx] = accd
     p.setJointMotorControl2(bodyIndex = bodyId,
                         jointIndex = 1,
-                        # controlMode = p.VELOCITY_CONTROL,
-                        # targetVelocity = -kp*pos - kv*vel)
                         controlMode = p.TORQUE_CONTROL,
                         force = ctrl)
     p.stepSimulation()
     pos = p.getJointState(bodyId, 1)[0]
     vel = p.getJointState(bodyId, 1)[1]
+    acc = (vel - prev_vel)/dt
+    prev_vel = vel
     logPos[idx] = pos
     logVel[idx] = vel
+    logAcc[idx] = acc
     logCtr[idx-1] = ctrl
     idx += 1
     if (GUI):
@@ -161,18 +181,25 @@ print(f'Linf euler = {linf_euler}')
 # print(f'Linf lin = {linf_lin}')
 
 import matplotlib.pyplot as plt
-plt.subplot(3,1,1)
+plt.subplot(4,1,1)
 plt.grid(True)
 plt.plot(logTime, logPos, label = "simPos")
 plt.plot(logTime, logRef, label = "simRef")
 plt.legend()
 
-plt.subplot(3,1,2)
+plt.subplot(4,1,2)
 plt.grid(True)
 plt.plot(logTime, logVel, label = "simVel")
+plt.plot(logTime, logRefd, label = "simRefd")
 plt.legend()
 
-plt.subplot(3,1,3)
+plt.subplot(4,1,3)
+plt.grid(True)
+plt.plot(logTime, logAcc, label = "simAcc")
+plt.plot(logTime, logRefdd, label = "simRefdd")
+plt.legend()
+
+plt.subplot(4,1,4)
 plt.grid(True)
 plt.plot(logTime[0:-1], logCtr, label = "simCtr")
 plt.legend()
