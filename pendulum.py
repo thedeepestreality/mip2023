@@ -40,7 +40,11 @@ maxTime = 5
 logTime = np.arange(0.0, maxTime, dt)
 sz = logTime.size
 logPos = np.zeros(sz)
+logVel = np.zeros(sz)
+logCtr = np.zeros(sz-1)
 logPos[0] = q0
+logRef = np.zeros(sz)
+logRef[0] = q0
 
 # go to the starting position
 p.setJointMotorControl2(bodyIndex = bodyId,
@@ -64,17 +68,41 @@ p.setJointMotorControl2(bodyIndex = bodyId,
 idx = 1
 pos = q0
 vel = 0
-kp = 2
-kv = 1
+kp = 16.18033989  
+kv = 31.65059322
+# kp = 6.18033989
+# kv = 31.57175666
+kp = 5005
+kv = 100
+ki = 0
+sum = 0
+qd = q0
+
+def feedback_lin(pos, vel, posd):
+    u = -kp*(pos - posd) -kv*vel
+    ctrl = m*L*L*((g/L)*math.sin(pos)+kf/(m*L*L)*vel + u)
+    return ctrl
+
 for t in logTime[1:]:
+    # pos -= math.pi
+    e = pos-qd
+    sum += e*dt
+    #ctrl = -kp*e - kv*vel - ki*sum
+    ctrl = feedback_lin(pos, vel, qd)
+    qd += 2*math.pi/5/240
+    logRef[idx] = qd
     p.setJointMotorControl2(bodyIndex = bodyId,
                         jointIndex = 1,
+                        # controlMode = p.VELOCITY_CONTROL,
+                        # targetVelocity = -kp*pos - kv*vel)
                         controlMode = p.TORQUE_CONTROL,
-                        force = -kp*pos - kv*vel)
+                        force = ctrl)
     p.stepSimulation()
     pos = p.getJointState(bodyId, 1)[0]
     vel = p.getJointState(bodyId, 1)[1]
     logPos[idx] = pos
+    logVel[idx] = vel
+    logCtr[idx-1] = ctrl
     idx += 1
     if (GUI):
         time.sleep(dt)
@@ -133,10 +161,20 @@ print(f'Linf euler = {linf_euler}')
 # print(f'Linf lin = {linf_lin}')
 
 import matplotlib.pyplot as plt
-plt.plot(logTime, logPos, label = "sim")
+plt.subplot(3,1,1)
 plt.grid(True)
-# plt.plot(logTime, logOdeint, label = "odeint")
-# plt.plot(logTime, logEuler, label = "euler")
-# plt.plot(logTime, logLin, label = "lin")
+plt.plot(logTime, logPos, label = "simPos")
+plt.plot(logTime, logRef, label = "simRef")
 plt.legend()
+
+plt.subplot(3,1,2)
+plt.grid(True)
+plt.plot(logTime, logVel, label = "simVel")
+plt.legend()
+
+plt.subplot(3,1,3)
+plt.grid(True)
+plt.plot(logTime[0:-1], logCtr, label = "simCtr")
+plt.legend()
+
 plt.show()
